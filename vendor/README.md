@@ -10,3 +10,7 @@ Copied unmodified from jsDelivr; SHA-384 of each file at the time it was added:
 | highlight.min.js | @highlightjs/cdn-assets@11.12.0 (BSD-3-Clause) | wjfDDhOPPdjtva8vWBhWeVprSpmxisEu5aYT3q1JyACqXpdKpo3PWZTMVq24MBix |
 
 To update: download the new file from `https://cdn.jsdelivr.net/npm/<package>@<version>/...`, check it, replace it here, update this table.
+
+## Icons
+
+UI icons are [Lucide](https://lucide.dev) v0.460.0 (ISC License, © Lucide Contributors; portions © Cole Bemis, Feather, MIT), vendored as an inline SVG `<symbol>` sprite at the top of `index.html` and referenced with `<use href="#i-…">`. Nothing loads from a CDN.
