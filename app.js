@@ -33,6 +33,19 @@ function el(tag, props = {}, ...kids) {
   for (const c of kids.flat()) if (c != null && c !== false) n.append(c);
   return n;
 }
+// Inline SVG icons: <use> references the Lucide sprite in index.html (no innerHTML, CSP-safe).
+const SVG_NS = "http://www.w3.org/2000/svg";
+function icon(name, cls = "") {
+  const s = document.createElementNS(SVG_NS, "svg");
+  s.setAttribute("class", "ic" + (cls ? " " + cls : ""));
+  s.setAttribute("aria-hidden", "true");
+  const u = document.createElementNS(SVG_NS, "use");
+  u.setAttribute("href", "#i-" + name);
+  s.append(u);
+  return s;
+}
+// Icon-only button with an accessible name and tooltip.
+const iconBtn = (name, label, onclick, cls = "") => el("button", { type: "button", class: cls || null, title: label, "aria-label": label, onclick }, icon(name));
 let toastTimer;
 function toast(msg, ms = 2600) {
   const t = $("#toast");
@@ -240,8 +253,13 @@ function enhanceCode(root, highlight) {
   root.querySelectorAll("pre").forEach((pre) => {
     const code = pre.querySelector("code");
     if (!pre.querySelector(".copy")) {
-      const b = el("button", { type: "button", class: "copy", text: "Copy" });
-      b.onclick = async () => { await copyText(code ? code.textContent : pre.textContent); b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1200); };
+      const lbl = el("span", { text: "Copy" }), ic = icon("copy");
+      const b = el("button", { type: "button", class: "copy", "aria-label": "Copy code" }, ic, lbl);
+      b.onclick = async () => {
+        await copyText(code ? code.textContent : pre.textContent);
+        lbl.textContent = "Copied"; ic.firstChild.setAttribute("href", "#i-check");
+        setTimeout(() => { lbl.textContent = "Copy"; ic.firstChild.setAttribute("href", "#i-copy"); }, 1200);
+      };
       pre.append(b);
     }
     if (highlight && code && window.hljs && code.textContent.length < 60000 && !code.dataset.hl) {
@@ -257,12 +275,16 @@ if (!models || !Array.isArray(models.list)) models = { at: 0, list: [] };
 const caps = (id) => models.list.find((m) => m.id === id) || null;
 const canSee = (id) => { const c = caps(id); return c ? c.in.includes("image") : true; };
 const makesImages = (id) => { const c = caps(id); return !!c && c.out.includes("image"); };
-function badgesFor(m) {
-  const b = [];
-  if (m.in.includes("image")) b.push("👁");
-  if (m.out.includes("image")) b.push("🎨");
-  if (m.reason) b.push("🧠");
-  return b.join("");
+const CAPS = [
+  ["eye", "Sees images", (m) => m.in.includes("image")],
+  ["image", "Makes images", (m) => m.out.includes("image")],
+  ["brain", "Reasoning", (m) => m.reason],
+];
+// Capability badges: small monochrome icons with tooltips, plus a "Free" text pill.
+function badgesFor(m, withFree = false) {
+  const out = CAPS.filter(([, , t]) => t(m)).map(([ic, label]) => el("span", { class: "cap", role: "img", title: label, "aria-label": label }, icon(ic)));
+  if (withFree && m.free) out.push(el("span", { class: "pill", title: "No cost", text: "Free" }));
+  return out;
 }
 async function loadModels(force = false) {
   if (!base()) return;
@@ -290,7 +312,7 @@ async function loadModels(force = false) {
 function updateModelUI() {
   const c = caps(settings.model);
   $("#modelName").textContent = c ? c.name.replace(/^[^:]+:\s*/, "") : shortModel(settings.model);
-  $("#modelBadges").textContent = c ? badgesFor(c) : "";
+  $("#modelBadges").replaceChildren(...(c ? badgesFor(c) : []));
   $("#imgOpts").classList.toggle("hidden", !makesImages(settings.model));
   updateHint();
 }
@@ -311,7 +333,9 @@ function renderModelList() {
     frag.append(el("button", {
       type: "button", class: "mrow" + (m.id === settings.model ? " on" : ""),
       onclick: () => { settings.model = m.id; saveSettings(); updateModelUI(); $("#modelDlg").close(); },
-    }, el("span", { class: "n", text: `${m.name} ${badgesFor(m)}` }), el("span", { class: "i", text: m.id })));
+    }, el("span", { class: "top" }, el("span", { class: "n", text: m.name }), el("span", { class: "badges" }, badgesFor(m, true)),
+      m.id === settings.model ? icon("check", "sel") : null),
+    el("span", { class: "i", text: m.id })));
   }
   if (!list.length) frag.append(el("p", { class: "muted", text: "No models match." }));
   box.append(frag);
@@ -336,8 +360,8 @@ function renderList() {
     list.append(el("div", { class: "chatItem" + (c.id === currentId ? " active" : "") },
       busy ? el("span", { class: "dot", title: "Generating" }) : null,
       el("button", { type: "button", class: "open", text: c.title || "New chat", onclick: () => { switchChat(c.id); openSidebar(false); } }),
-      el("button", { type: "button", class: "act", title: "Rename", "aria-label": "Rename chat", text: "✎", onclick: () => renameChat(c) }),
-      el("button", { type: "button", class: "act", title: "Delete", "aria-label": "Delete chat", text: "🗑", onclick: () => deleteChat(c) }),
+      iconBtn("pencil", "Rename chat", () => renameChat(c), "act"),
+      iconBtn("trash", "Delete chat", () => deleteChat(c), "act"),
     ));
   }
   if (!sorted.length) list.append(el("p", { class: "muted group", text: q ? "No matches" : "No chats yet" }));
@@ -364,7 +388,8 @@ function renderMessages() {
   const c = current();
   if (!c || !c.messages.length) {
     box.append(el("div", { id: "empty" },
-      el("h1", { text: "Hack Club AI Chat" }),
+      el("div", { class: "mark" }, icon("sparkles")),
+      el("h1", { text: ready() ? "How can I help?" : "Hack Club AI Chat" }),
       el("p", { text: ready() ? "Ask anything, or attach an image or PDF." : "Add your API key and Worker URL to get started. Your key and chats stay in this browser." }),
       ready() ? null : el("button", { type: "button", class: "primary", text: "Open settings", onclick: openSettings })));
     return;
@@ -388,18 +413,18 @@ function fillMsg(wrap, c, m) {
     if (m.attachments?.length) {
       wrap.append(el("div", { class: "atts" }, m.attachments.map((a) => a.kind === "image"
         ? el("img", { src: a.dataUrl, alt: a.name || "image", onclick: () => openViewer(a.dataUrl) })
-        : el("span", { class: "pdfchip", text: "📄 " + (a.name || "document.pdf") }))));
+        : el("span", { class: "pdfchip" }, icon("file"), el("span", { text: a.name || "document.pdf" })))));
     }
     if (m.content) wrap.append(el("div", { class: "bubble", text: m.content }));
     const meta = el("div", { class: "meta" },
-      el("button", { type: "button", text: "Copy", onclick: () => copyText(m.content).then(() => toast("Copied")) }));
-    if (!run && m === lastUser(c)) meta.append(el("button", { type: "button", text: "Edit", onclick: () => editUser(c, m) }));
+      m.content ? iconBtn("copy", "Copy", () => copyText(m.content).then(() => toast("Copied"))) : null);
+    if (!run && m === lastUser(c)) meta.append(iconBtn("pencil", "Edit", () => editUser(c, m)));
     wrap.append(meta);
     return;
   }
   const bubble = el("div", { class: "bubble" });
   if (m.reasoning) {
-    const d = el("details", { class: "think" }, el("summary", { text: busyHere && !m.content ? "Thinking…" : "Thoughts" }));
+    const d = el("details", { class: "think" }, el("summary", {}, icon("brain"), el("span", { text: busyHere && !m.content ? "Thinking…" : "Thoughts" }), icon("chev", "chev")));
     if (busyHere && !m.content) d.open = true;
     const inner = el("div"); inner.innerHTML = md(m.reasoning); d.append(inner);
     inner.querySelectorAll("img:not([src])").forEach((i) => i.remove());
@@ -423,15 +448,16 @@ function fillMsg(wrap, c, m) {
       error: "Error" + (m.error ? ": " + m.error : ""),
     }[m.status] || "Incomplete";
     wrap.append(el("div", { class: "banner " + (m.status === "error" ? "err" : "warn") },
+      icon(m.status === "error" ? "error" : "alert", "lead"),
       el("span", { class: "txt", text: text }),
-      canContinue && !run ? el("button", { type: "button", text: "Continue", onclick: () => continueMsg(c, m) }) : null,
-      !run ? el("button", { type: "button", text: "Retry", onclick: () => retryMsg(c, m) }) : null));
+      canContinue && !run ? el("button", { type: "button", onclick: () => continueMsg(c, m) }, icon("play"), el("span", { text: "Continue" })) : null,
+      !run ? el("button", { type: "button", onclick: () => retryMsg(c, m) }, icon("retry"), el("span", { text: "Retry" })) : null));
   }
   if (!busyHere) {
     const meta = el("div", { class: "meta" },
       m.model ? el("span", { class: "model", text: shortModel(m.model) }) : null,
-      m.content ? el("button", { type: "button", text: "Copy", onclick: () => copyText(m.content).then(() => toast("Copied")) }) : null,
-      !run && !m.status && isLast(c, m) ? el("button", { type: "button", text: "Regenerate", onclick: () => retryMsg(c, m) }) : null);
+      m.content ? iconBtn("copy", "Copy", () => copyText(m.content).then(() => toast("Copied"))) : null,
+      !run && !m.status && isLast(c, m) ? iconBtn("refresh", "Regenerate", () => retryMsg(c, m)) : null);
     wrap.append(meta);
   }
 }
@@ -448,8 +474,8 @@ function renderPending() {
   const box = $("#attachments"); box.textContent = "";
   box.classList.toggle("hidden", !pending.length);
   pending.forEach((a, i) => box.append(el("div", { class: "att" },
-    a.kind === "image" ? el("img", { src: a.dataUrl, alt: a.name }) : el("span", { class: "pdfchip", text: "📄 " + a.name }),
-    el("button", { type: "button", class: "x", "aria-label": "Remove", text: "✕", onclick: () => { pending.splice(i, 1); renderPending(); } }))));
+    a.kind === "image" ? el("img", { src: a.dataUrl, alt: a.name }) : el("span", { class: "pdfchip" }, icon("file"), el("span", { text: a.name })),
+    iconBtn("x", "Remove attachment", () => { pending.splice(i, 1); renderPending(); }, "x"))));
   updateSendBtn(); updateHint();
 }
 function loadImg(src) {
@@ -494,8 +520,8 @@ async function addFiles(files) {
 }
 function updateHint() {
   const h = $("#hint");
-  if (pending.some((a) => a.kind === "image") && !canSee(settings.model)) h.textContent = "This model can't see images — pick one marked 👁.";
-  else if (makesImages(settings.model)) h.textContent = "🎨 This model makes images. Attach one to edit it.";
+  if (pending.some((a) => a.kind === "image") && !canSee(settings.model)) h.textContent = "This model can't see images. Pick a vision model.";
+  else if (makesImages(settings.model)) h.textContent = "This model makes images. Attach one to edit it.";
   else h.textContent = "";
 }
 
@@ -712,7 +738,7 @@ async function onSend() {
   const text = $("#input").value.trim();
   if ((!text && !pending.length) || run) return;
   if (!ready()) { openSettings(); return; }
-  if (pending.some((a) => a.kind === "image") && !canSee(settings.model)) { toast("This model can't see images — pick one marked 👁"); return; }
+  if (pending.some((a) => a.kind === "image") && !canSee(settings.model)) { toast("This model can't see images. Pick a vision model."); return; }
   let c = current();
   if (!c) {
     c = { id: uid(), title: (text || pending[0]?.name || "New chat").replace(/\s+/g, " ").slice(0, 60), messages: [], updated: Date.now() };
@@ -861,6 +887,13 @@ function applyTheme() {
   const t = settings.theme;
   if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
   else document.documentElement.removeAttribute("data-theme");
+  // Keep the browser chrome (iOS status bar / address bar) in step with an explicit theme choice.
+  const col = { light: "#faf9f7", dark: "#111113" }[t];
+  document.querySelectorAll('meta[name="theme-color"]').forEach((mt) => {
+    if (!mt.dataset.media) mt.dataset.media = mt.getAttribute("media") || "";
+    if (col) { mt.setAttribute("content", col); mt.removeAttribute("media"); }
+    else { mt.setAttribute("media", mt.dataset.media); mt.setAttribute("content", /dark/.test(mt.dataset.media) ? "#111113" : "#faf9f7"); }
+  });
 }
 
 // ---------------------------------------------------------------- wiring
@@ -899,7 +932,7 @@ $("#modelFilters").addEventListener("click", (e) => {
   renderModelList();
 });
 document.querySelectorAll("dialog").forEach((d) => {
-  d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-close]")) d.close(); }); // tap backdrop / ✕ to close
+  d.addEventListener("click", (e) => { if (e.target === d || e.target.closest("[data-close]")) d.close(); }); // tap backdrop / close button to close
 });
 
 // ---------------------------------------------------------------- boot
