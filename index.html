@@ -2,65 +2,130 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://*.workers.dev https://ai.hackclub.com; manifest-src 'self'; base-uri 'none'; form-action 'self'; object-src 'none'" />
+<meta name="referrer" content="no-referrer" />
 <title>Chat · Hack Club AI</title>
-<meta name="theme-color" content="#0f1115" />
+<meta name="theme-color" content="#0e1014" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#f7f7f8" media="(prefers-color-scheme: light)" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Chat" />
 <link rel="stylesheet" href="style.css" />
-<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github-dark.min.css" />
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11/lib/highlight.min.js"></script>
+<script src="theme.js"></script>
+<!-- Vendored, version-pinned libraries (see vendor/README.md). No third-party scripts load at runtime. -->
+<script src="vendor/marked.min.js" defer></script>
+<script src="vendor/purify.min.js" defer></script>
+<script src="vendor/highlight.min.js" defer></script>
+<script src="app.js" defer></script>
 </head>
 <body>
 <div id="app">
-  <aside id="sidebar">
-    <button id="newChat" class="primary">＋ New chat</button>
-    <div id="chatList"></div>
-    <button id="openSettings" class="ghost">⚙ Settings</button>
+  <aside id="sidebar" aria-label="Chats">
+    <div class="side-top">
+      <button id="newChat" class="primary wide" type="button">＋ New chat</button>
+      <input id="chatSearch" type="search" placeholder="Search chats" autocomplete="off" aria-label="Search chats" />
+    </div>
+    <nav id="chatList"></nav>
+    <div class="side-bottom">
+      <button id="openSettings" class="ghost wide" type="button">⚙︎ Settings</button>
+    </div>
   </aside>
+  <div id="scrim" class="hidden"></div>
 
   <main>
     <header>
-      <button id="toggleSidebar" class="icon" aria-label="Menu">☰</button>
-      <select id="model" title="Model"></select>
-      <span id="status"></span>
+      <button id="toggleSidebar" class="icon" type="button" aria-label="Open chats">☰</button>
+      <button id="modelBtn" class="model-btn" type="button" aria-haspopup="dialog">
+        <span id="modelName">Model</span><span id="modelBadges" class="badges"></span><span class="chev">▾</span>
+      </button>
+      <button id="newChatTop" class="icon" type="button" aria-label="New chat">✎</button>
     </header>
 
-    <section id="messages">
-      <div id="empty">
-        <h1>Hack Club AI Chat</h1>
-        <p>Pick a model and say hi. Your API key and chats stay in this browser.</p>
-      </div>
-    </section>
+    <section id="messages" aria-live="polite"></section>
 
-    <form id="composer">
-      <textarea id="input" rows="1" placeholder="Message…" autocomplete="off"></textarea>
-      <button id="send" type="submit" class="primary" aria-label="Send">➤</button>
-      <button id="stop" type="button" class="danger hidden" aria-label="Stop">■</button>
-    </form>
+    <div id="composerWrap">
+      <div id="attachments" class="hidden"></div>
+      <div id="imgOpts" class="hidden">
+        <label>Aspect <select id="aspect">
+          <option value="">default</option><option>1:1</option><option>2:3</option><option>3:2</option><option>3:4</option><option>4:3</option><option>4:5</option><option>5:4</option><option>9:16</option><option>16:9</option><option>21:9</option>
+        </select></label>
+      </div>
+      <form id="composer" autocomplete="off">
+        <button id="attachBtn" type="button" class="icon round" aria-label="Attach image or PDF">＋</button>
+        <input id="fileInput" type="file" accept="image/*,application/pdf" multiple class="hidden" />
+        <textarea id="input" rows="1" placeholder="Message" aria-label="Message"></textarea>
+        <button id="send" type="submit" class="primary round" aria-label="Send" disabled>↑</button>
+        <button id="stop" type="button" class="round stop hidden" aria-label="Stop">■</button>
+      </form>
+      <div id="hint"></div>
+    </div>
   </main>
 </div>
 
-<dialog id="settings">
-  <form method="dialog" id="settingsForm">
-    <h2>Settings</h2>
+<div id="toast" role="status" class="hidden"></div>
+
+<dialog id="modelDlg" class="sheet">
+  <div class="sheet-head">
+    <input id="modelSearch" type="search" placeholder="Search models" autocomplete="off" aria-label="Search models" />
+    <button type="button" class="icon" data-close aria-label="Close">✕</button>
+  </div>
+  <div class="chips" id="modelFilters">
+    <button type="button" data-f="all" class="chip on">All</button>
+    <button type="button" data-f="vision" class="chip">👁 Vision</button>
+    <button type="button" data-f="image" class="chip">🎨 Makes images</button>
+    <button type="button" data-f="reason" class="chip">🧠 Reasoning</button>
+    <button type="button" data-f="free" class="chip">Free</button>
+  </div>
+  <div id="modelList"></div>
+</dialog>
+
+<dialog id="settings" class="sheet">
+  <div class="sheet-head"><h2>Settings</h2><button type="button" class="icon" data-close aria-label="Close">✕</button></div>
+  <div class="settings-body">
     <label>Hack Club AI API key
-      <input id="apiKey" type="password" placeholder="from ai.hackclub.com/dashboard" autocomplete="off" />
+      <input id="apiKey" type="password" placeholder="from ai.hackclub.com/dashboard" autocomplete="off" spellcheck="false" />
     </label>
-    <label>API base URL
-      <input id="baseUrl" type="url" placeholder="https://your-worker.workers.dev/proxy/v1" />
-      <small>Hack Club only allows browser calls from its own sites, so point this at your Cloudflare Worker relay (see README).</small>
+    <label class="check"><input id="rememberKey" type="checkbox" /> Remember key on this device</label>
+    <small>Unticked: the key is kept only until you close this tab.</small>
+    <label>API base URL (your Worker relay)
+      <input id="baseUrl" type="url" placeholder="https://your-worker.workers.dev/proxy/v1" spellcheck="false" />
+      <small>Hack Club only allows browser calls from its own sites, so this must be your Cloudflare Worker (see README).</small>
     </label>
     <label>System prompt
       <textarea id="systemPrompt" rows="3" placeholder="You are a helpful assistant."></textarea>
     </label>
-    <div class="row">
-      <button type="button" id="clearAll" class="danger">Delete all chats</button>
-      <button value="save" class="primary">Save</button>
+    <div class="grid2">
+      <label>Temperature <input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="default" inputmode="decimal" /></label>
+      <label>Max tokens <input id="maxTokens" type="number" min="1" step="1" placeholder="default" inputmode="numeric" /></label>
     </div>
-  </form>
+    <label>Theme
+      <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+    </label>
+    <label class="check"><input id="wakeLock" type="checkbox" /> Keep screen awake while a reply is generating</label>
+    <div class="row">
+      <button type="button" id="saveSettings" class="primary">Save</button>
+      <button type="button" id="showStats">Usage</button>
+    </div>
+    <div id="statsOut" class="muted"></div>
+    <h3>Your chats</h3>
+    <div class="row">
+      <button type="button" id="exportBtn">Export</button>
+      <button type="button" id="importBtn">Import</button>
+      <input id="importFile" type="file" accept="application/json,.json" class="hidden" />
+      <button type="button" id="clearAll" class="danger">Delete all</button>
+    </div>
+    <small id="storageInfo" class="muted"></small>
+  </div>
 </dialog>
 
-<script src="app.js"></script>
+<dialog id="viewer" class="viewer">
+  <img id="viewerImg" alt="" />
+  <div class="row">
+    <button type="button" id="viewerDownload">Download</button>
+    <button type="button" id="viewerEdit">Edit with AI</button>
+    <button type="button" data-close>Close</button>
+  </div>
+</dialog>
 </body>
 </html>
